@@ -21,7 +21,7 @@ The program reads information about running processes directly from the `/proc` 
 ## Build
 
 ```bash
-gcc src/procinfo.c -o procinfo
+gcc procinfo.c -o procinfo
 ```
 
 or using Makefile:
