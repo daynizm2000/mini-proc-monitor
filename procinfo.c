@@ -39,9 +39,9 @@ static int read_file(int fd, char *buffer, size_t bufsize)
         return 0;
 }
 
-static void _Cpu_times_cp(char *buffer, size_t *i, ull_t *time)
+static void _Cpu_times_cp(const char *buffer, size_t *i, ull_t *time)
 {
-        char *ptr = buffer + *i;
+        const char *ptr = buffer + *i;
         size_t ccount = 0;
 
         while (isdigit(ptr[ccount])) ccount++;
