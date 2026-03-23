@@ -9,10 +9,17 @@
 
 typedef unsigned long long ull_t;
 
+#define PROCNAME_SIZE 16
+#define PATH_TO_PROCINF_LEN 128
+
+#define STAT_UTIME_POS 14
+#define STAT_STIME_POS 15
+#define STAT_STATE_POS 3
+
 typedef struct {
         pid_t pid;
 
-        char name[16];
+        char name[PROCNAME_SIZE];
         char state;
 
         double cpu;
@@ -21,10 +28,25 @@ typedef struct {
         uid_t uid;
 } procinfo_t;
 
+static int get_max(int *nums, size_t size)
+{
+	int max = *nums;
+
+	if (size == 1) return max;
+
+	for (size_t i = 1; i < size; i++) {
+		if (max < nums[i]) {
+			max = nums[i];
+		}
+	}
+
+	return max;
+}
+
 static int read_file(int fd, char *buffer, size_t bufsize)
 {
         if (fd < 0 || !buffer || !bufsize) return -1;
-        
+
         ssize_t read_bytes = 0;
         size_t total_bytes = 0;
 
@@ -46,7 +68,7 @@ static void _Cpu_times_cp(const char *buffer, size_t *i, ull_t *time)
 
         while (isdigit(ptr[ccount])) ccount++;
 
-        char tmp[128];
+        char tmp[PATH_TO_PROCINF_LEN];
         strncpy(tmp, ptr, ccount);
         tmp[ccount] = '\0';
 
@@ -59,7 +81,7 @@ static int _Get_cpu_times(pid_t pid, ull_t *utime, ull_t *stime)
 {
         if (pid < 0 || !utime || !stime) return -1;
 
-        char path[128];
+        char path[PATH_TO_PROCINF_LEN];
         sprintf(path, "/proc/%d/stat", pid);
 
         int fd = open(path, O_RDONLY);
@@ -72,32 +94,35 @@ static int _Get_cpu_times(pid_t pid, ull_t *utime, ull_t *stime)
                 return -1;
         }
 
-        size_t words  = 0;
+        size_t pos  = 0;
         int in_word   = 0;
         int in_quotes = 0;
+
+	int _tmp_arr[] = {STAT_UTIME_POS, STAT_STIME_POS};
+	const int last = get_max(_tmp_arr, sizeof(_tmp_arr) / sizeof(*_tmp_arr));
 
         for (size_t i = 0; buffer[i]; i++) {
                 if (isspace(buffer[i])) {
                         in_word = 0;
                 }
-                
+
                 else if (buffer[i] == '\"' && !in_quotes) in_quotes = 1;
                 else if (buffer[i] == '\"' && in_quotes) in_quotes = 0;
 
                 else if (!in_word) {
                         in_word = 1;
-                        words++;
+                        pos++;
 
-                        if (words == 14) {
+                        if (pos == STAT_UTIME_POS) {
                                 _Cpu_times_cp(buffer, &i, utime);
                         }
-                        else if (words == 15) {
+                        else if (pos == STAT_STIME_POS) {
                                 _Cpu_times_cp(buffer, &i, stime);
 
                                 close(fd);
                                 return 0;
                         }
-                        else if (words > 15) {
+                        else if (pos > last) {
                                 break;
                         }
                 }
@@ -113,7 +138,7 @@ static int pnf_getcpu(procinfo_t *info)
 
         ull_t utime1;
         ull_t stime1;
-        
+
         if (_Get_cpu_times(info->pid, &utime1, &stime1) != 0) {
                 return -1;
         }
@@ -137,12 +162,12 @@ static int pnf_getname(procinfo_t *info)
 {
         if (!info) return -1;
 
-        char path[128];
+        char path[PATH_TO_PROCINF_LEN];
         sprintf(path, "/proc/%d/comm", info->pid);
 
         int fd = open(path, O_RDONLY);
         if (fd < 0) return -1;
-        
+
         if (read_file(fd, info->name, sizeof(info->name)) != 0) {
                 close(fd);
                 return -1;
@@ -159,7 +184,7 @@ static int pnf_getstate(procinfo_t *info)
 {
         if (!info) return -1;
 
-        char path[128];
+        char path[PATH_TO_PROCINF_LEN];
         sprintf(path, "/proc/%d/stat", info->pid);
 
         int fd = open(path, O_RDONLY);
@@ -172,29 +197,30 @@ static int pnf_getstate(procinfo_t *info)
                 return -1;
         }
 
-        size_t words  = 0;
+        size_t pos    = 0;
         int in_word   = 0;
         int in_quotes = 0;
+	const int last      = STAT_STATE_POS;
 
         for (size_t i = 0; buffer[i]; i++) {
                 if (isspace(buffer[i])) {
                         in_word = 0;
                 }
-                
+
                 else if (buffer[i] == '\"' && !in_quotes) in_quotes = 1;
                 else if (buffer[i] == '\"' && in_quotes) in_quotes = 0;
 
                 else if (!in_word) {
                         in_word = 1;
-                        words++;
+                        pos++;
 
-                        if (words == 3) {
+                        if (pos == STAT_STATE_POS) {
                                 info->state = buffer[i];
                                 close(fd);
                                 return 0;
                         }
 
-                        if (words > 3) break;
+                        if (pos > last) break;
                 }
         }
 
@@ -206,7 +232,7 @@ static int pnf_getmem(procinfo_t *info)
 {
         if (!info) return -1;
 
-        char path[128];
+        char path[PATH_TO_PROCINF_LEN];
         sprintf(path, "/proc/%d/statm", info->pid);
 
         int fd = open(path, O_RDONLY);
@@ -261,7 +287,7 @@ static int pnf_getuid(procinfo_t *info)
 {
         if (!info) return -1;
 
-        char path[128];
+        char path[PATH_TO_PROCINF_LEN];
         sprintf(path, "/proc/%d/status", info->pid);
 
         int fd = open(path, O_RDONLY);
@@ -288,7 +314,7 @@ static int pnf_getuid(procinfo_t *info)
                                 tmp[ccount] = '\0';
 
                                 info->uid = atoi(tmp);
-                                
+
                                 close(fd);
                                 return 0;
                         }
@@ -320,12 +346,12 @@ void pnf_print(procinfo_t info)
 {
         char *user = (info.uid == 0) ? "root" : "user";
 
-        printf("    %-8d %-6s %-2c %-8.2f %-10lld %s\n", 
-                info.pid, 
-                user, 
-                info.state, 
-                info.cpu, 
-                info.mem, 
+        printf("    %-8d %-6s %-2c %-8.2f %-10llu %s\n",
+                info.pid,
+                user,
+                info.state,
+                info.cpu,
+                info.mem,
                 info.name);
 }
 
@@ -347,7 +373,7 @@ int proc_scanner(void)
 
         struct dirent *entry;
 
-        printf("\n    %-8s %-6s %-2s %-8s %-10s %s\n", 
+        printf("\n    %-8s %-6s %-2s %-8s %-10s %s\n",
                 "PID", "USER", "ST", "CPU%", "MEM(KB)", "NAME");
 
         printf("    %-8s %-6s %-2s %-8s %-10s %s\n",
